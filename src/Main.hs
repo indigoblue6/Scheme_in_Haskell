@@ -155,11 +155,13 @@ runRepl = do
             Nothing -> return ()  -- Ctrl-D
             Just input 
                 | all (`elem` " \t\n") input -> loop env  -- 空白のみは無視
-                | filter (/= '\n') input == "quit" -> return ()
+                | trim input == "quit" -> return ()
                 | otherwise -> do
-                    result <- liftIO $ evalString env (filter (/= '\n') input)
+                    result <- liftIO $ evalString env input
                     outputStrLn result
                     loop env
+    
+    trim = unwords . words  -- 前後の空白を削除
 
 -- | 1つの式を評価
 runOne :: String -> IO ()

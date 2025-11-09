@@ -40,11 +40,16 @@ parseBool = do
 
 -- | アトムのパーサー
 parseAtom :: Parser LispVal
-parseAtom = do
-    first <- letter <|> symbol
-    rest <- many (letter <|> digit <|> symbol)
-    let atom = first:rest
-    return $ Atom atom
+parseAtom = parseEllipsis <|> parseRegularAtom
+  where
+    parseEllipsis = do
+        _ <- string "..."
+        return $ Atom "..."
+    parseRegularAtom = do
+        first <- letter <|> symbol
+        rest <- many (letter <|> digit <|> symbol)
+        let atom = first:rest
+        return $ Atom atom
 
 -- | 数値のパーサー（整数、浮動小数点、有理数、複素数）
 parseNumber :: Parser LispVal

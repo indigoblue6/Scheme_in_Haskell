@@ -66,13 +66,13 @@ eval env (List (Atom "define-syntax" : Atom name : List (Atom "syntax-rules" : L
     extractTemplate other = other
 eval env (List (Atom "define" : List (Atom var : params') : body')) = do
     func <- makeNormalFunc env params' body'
-    -- 関数本体の未定義変数をチェック
-    checkUndefinedVars env (map showVal params') body'
+    -- 関数本体の未定義変数をチェック（関数名自身も含める：再帰のため）
+    checkUndefinedVars env (var : map showVal params') body'
     defineVar env var func
 eval env (List (Atom "define" : DottedList (Atom var : params') varargs : body')) = do
     func <- makeVarArgs varargs env params' body'
-    -- 関数本体の未定義変数をチェック
-    checkUndefinedVars env (map showVal params' ++ [showVal varargs]) body'
+    -- 関数本体の未定義変数をチェック（関数名自身も含める：再帰のため）
+    checkUndefinedVars env (var : map showVal params' ++ [showVal varargs]) body'
     defineVar env var func
 eval env (List (Atom "lambda" : List params' : body')) =
     makeNormalFunc env params' body'
@@ -283,8 +283,9 @@ makeVarArgs = makeFunc . Just . showVal
 -- | 関数本体の未定義変数をチェック（警告を出力）
 checkUndefinedVars :: Env -> [String] -> [LispVal] -> IOThrowsError ()
 checkUndefinedVars env params' body' = do
-    let usedVars = concatMap collectVars body'
-    let localVars = params' ++ builtinVars
+    let usedVars = concatMap (collectVars []) body'
+    let definedInBody = concatMap collectAllDefinitions body'
+    let localVars = params' ++ builtinVars ++ definedInBody
     let undefined' = filter (`notElem` localVars) usedVars
     unless (null undefined') $ do
         envVars <- liftIO $ getAllVars env
@@ -294,13 +295,62 @@ checkUndefinedVars env params' body' = do
   where
     builtinVars = ["define", "lambda", "if", "quote", "set!", "let", "let*", "letrec",
                    "cond", "case", "and", "or", "begin", "delay", "force",
-                   "call/cc", "call-with-current-continuation", "define-syntax"]
+                   "call/cc", "call-with-current-continuation", "define-syntax", "else"]
     
-    collectVars :: LispVal -> [String]
-    collectVars (Atom name) = [name]
-    collectVars (List exprs) = concatMap collectVars exprs
-    collectVars (DottedList exprs last') = concatMap collectVars exprs ++ collectVars last'
-    collectVars _ = []
+    -- 変数を収集（localDefs: その式のスコープ内で定義された変数リスト）
+    collectVars :: [String] -> LispVal -> [String]
+    collectVars localDefs (Atom name) 
+        | name `elem` localDefs = []  -- ローカル定義済み
+        | otherwise = [name]
+    collectVars _ (List (Atom "quote" : _)) = []  -- クォートされた式は変数参照ではない
+    collectVars localDefs (List (Atom "define" : Atom var : rest)) = 
+        concatMap (collectVars (var:localDefs)) rest  -- define自身もローカル定義
+    collectVars localDefs (List (Atom "define" : List (Atom var : _) : body)) = 
+        concatMap (collectVars (var:localDefs)) body  -- 関数定義のbodyで関数名も使える
+    collectVars localDefs (List (Atom "define" : DottedList (Atom var : _) _ : body)) = 
+        concatMap (collectVars (var:localDefs)) body
+    collectVars localDefs (List (Atom "lambda" : List paramExprs : body)) =
+        let paramNames = [name | Atom name <- paramExprs]
+        in concatMap (collectVars (paramNames ++ localDefs)) body
+    collectVars localDefs (List (Atom "lambda" : DottedList paramExprs (Atom vararg) : body)) =
+        let paramNames = [name | Atom name <- paramExprs]
+        in concatMap (collectVars (vararg : paramNames ++ localDefs)) body
+    collectVars localDefs (List (Atom "let" : List bindings : body)) =
+        let boundVars = [var | List [Atom var, _] <- bindings]
+            bindingExprs = [expr | List [_, expr] <- bindings]
+        in concatMap (collectVars localDefs) bindingExprs ++ 
+           concatMap (collectVars (boundVars ++ localDefs)) body
+    collectVars localDefs (List (Atom "let*" : List bindings : body)) =
+        collectLetStar localDefs bindings body
+    collectVars localDefs (List (Atom "letrec" : List bindings : body)) =
+        let boundVars = [var | List [Atom var, _] <- bindings]
+            newLocalDefs = boundVars ++ localDefs
+        in concatMap (collectVars newLocalDefs) [expr | List [_, expr] <- bindings] ++
+           concatMap (collectVars newLocalDefs) body
+    collectVars localDefs (List exprs) = concatMap (collectVars localDefs) exprs
+    collectVars localDefs (DottedList exprs last') = 
+        concatMap (collectVars localDefs) exprs ++ collectVars localDefs last'
+    collectVars _ _ = []
+    
+    -- let*の逐次バインディングを処理
+    collectLetStar :: [String] -> [LispVal] -> [LispVal] -> [String]
+    collectLetStar localDefs [] body = concatMap (collectVars localDefs) body
+    collectLetStar localDefs (List [Atom var, expr] : rest) body =
+        collectVars localDefs expr ++ collectLetStar (var:localDefs) rest body
+    collectLetStar localDefs (_ : rest) body = collectLetStar localDefs rest body
+    
+    -- 本体で定義された関数名を全て収集（ネスト含む）
+    collectAllDefinitions :: LispVal -> [String]
+    collectAllDefinitions (List (Atom "define" : Atom var : rest)) = 
+        var : concatMap collectAllDefinitions rest
+    collectAllDefinitions (List (Atom "define" : List (Atom var : _) : body)) = 
+        var : concatMap collectAllDefinitions body
+    collectAllDefinitions (List (Atom "define" : DottedList (Atom var : _) _ : body)) = 
+        var : concatMap collectAllDefinitions body
+    collectAllDefinitions (List exprs) = concatMap collectAllDefinitions exprs
+    collectAllDefinitions (DottedList exprs last') = 
+        concatMap collectAllDefinitions exprs ++ collectAllDefinitions last'
+    collectAllDefinitions _ = []
     
     getAllVars :: Env -> IO [String]
     getAllVars envRef = do

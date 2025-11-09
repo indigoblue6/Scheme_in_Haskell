@@ -9,11 +9,18 @@ import Control.Monad.IO.Class (liftIO)
 
 -- | 1つの式を評価して文字列を返す
 evalString :: Env -> String -> IO String
-evalString env expr = runIOThrows $ fmap show $ liftThrows (readExpr expr) >>= eval env
+evalString env expr = runIOThrows $ do
+    parsed <- liftThrows (readExpr expr)
+    result <- eval env parsed
+    return $ show result
 
 -- | 複数の式を評価して最後の結果を返す
 evalAndPrint :: Env -> String -> IO ()
-evalAndPrint env expr = evalString env expr >>= putStrLn
+evalAndPrint env expr = do
+    result <- evalString env expr
+    case result of
+        "Error: Empty input" -> return ()  -- 空行は無視
+        _ -> putStrLn result
 
 -- | Scheme関数名と特殊形式のリスト(タブ補完用)
 schemeKeywords :: [String]
@@ -158,8 +165,9 @@ runRepl = do
                 | trim input == "quit" -> return ()
                 | otherwise -> do
                     result <- liftIO $ evalString env input
-                    outputStrLn result
-                    loop env
+                    case result of
+                        "Error: Empty input" -> loop env  -- 空入力エラーは無視
+                        _ -> outputStrLn result >> loop env
     
     trim = unwords . words  -- 前後の空白を削除
 

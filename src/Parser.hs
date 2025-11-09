@@ -142,15 +142,23 @@ parseExpr = parseBool
 
 -- | 文字列をScheme式にパース
 readExpr :: String -> ThrowsError LispVal
-readExpr input = case parse (skipWhitespace >> parseExpr) "lisp" input of
-    Left err -> throwError $ Parser err
-    Right val -> return val
+readExpr input = 
+    let trimmed = dropWhile (`elem` " \t\n\r") input
+    in if null trimmed || all isComment (lines trimmed)
+       then throwError $ Default "Empty input"
+       else case parse (skipWhitespace >> parseExpr) "lisp" input of
+           Left err -> throwError $ Parser err
+           Right val -> return val
   where
     skipWhitespace = skipMany ((space >> return ()) <|> comment)
     comment = do
         _ <- char ';'
         _ <- manyTill anyChar (try newline <|> (eof >> return '\n'))
         return ()
+    isComment line = case dropWhile (`elem` " \t") line of
+        (';':_) -> True
+        "" -> True
+        _ -> False
 
 -- | 複数のScheme式をパース
 readExprList :: String -> ThrowsError [LispVal]

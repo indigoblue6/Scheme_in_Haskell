@@ -139,6 +139,23 @@ expandMacro args macroPatterns macroTemplates =
     -- 引数リストとパターンのマッチング
     matchArgs :: [LispVal] -> [LispVal] -> Maybe [(String, LispVal)]
     matchArgs [] [] = Just []
+    -- 単一リスト引数と (x ...) パターンのマッチング
+    -- パターンが (x ...) の形式で、引数が1つのListの場合
+    matchArgs (List items : argRest) (List [Atom name, Atom "..."] : patRest) = do
+        restBindings <- matchArgs argRest patRest
+        return $ (name, List items) : restBindings
+    -- ネストされたパターン ((subpattern) ...) の処理
+    -- パターンが ((x y) ...) の形式で、引数が1つのListの場合
+    matchArgs (List items : argRest) (List (List subPattern : Atom "..." : []) : patRest) = do
+        -- itemsの各要素をsubPatternにマッチさせる
+        subBindingsList <- mapM (matchListArg subPattern) items
+        -- 各変数のバインディングをリストにまとめる
+        let combinedBindings = combineBindings subBindingsList
+        restBindings <- matchArgs argRest patRest
+        return $ combinedBindings ++ restBindings
+      where
+        matchListArg pat (List argVals) = matchArgs argVals pat
+        matchListArg _ _ = Nothing
     -- ... パターン: 直前の変数に残りすべてをバインド
     matchArgs allArgs [Atom name, Atom "..."] = Just [(name, List allArgs)]
     matchArgs (arg:argRest) (Atom name : Atom "..." : patRest) = do
@@ -154,6 +171,17 @@ expandMacro args macroPatterns macroTemplates =
         rest <- matchArgs argRest patRest
         return $ (name, arg) : rest
     matchArgs _ _ = Nothing
+    
+    -- 複数のバインディングリストを1つにまとめる
+    combineBindings :: [[(String, LispVal)]] -> [(String, LispVal)]
+    combineBindings [] = []
+    combineBindings bindingsList =
+        let allVars = nub [var | bindings <- bindingsList, (var, _) <- bindings]
+            collectValues var = List [val | bindings <- bindingsList, Just val <- [lookup var bindings]]
+        in [(var, collectValues var) | var <- allVars]
+      where
+        nub [] = []
+        nub (x:xs) = x : nub (filter (/= x) xs)
     
     -- テンプレート展開（...対応）
     substituteTemplate :: LispVal -> [(String, LispVal)] -> LispVal
@@ -177,20 +205,21 @@ expandMacro args macroPatterns macroTemplates =
             Atom name -> case lookup name bindings of
                 Just (List vals) -> vals ++ expandItems rest bindings
                 _ -> item : Atom "..." : expandItems rest bindings
-            List subItems -> case findEllipsisVars subItems bindings of
-                Just expanded -> expanded ++ expandItems rest bindings
-                Nothing -> (substituteTemplate item bindings) : expandItems rest bindings
+            List subItems -> 
+                -- ネストされたパターン ((var val) ...) の展開
+                let expanded = expandNestedEllipsis subItems bindings
+                in expanded ++ expandItems rest bindings
             _ -> (substituteTemplate item bindings) : expandItems rest bindings
     expandItems (item : rest) bindings =
         substituteTemplate item bindings : expandItems rest bindings
     
-    -- ...パターンで複数値を持つ変数を見つけて展開
-    findEllipsisVars :: [LispVal] -> [(String, LispVal)] -> Maybe [LispVal]
-    findEllipsisVars items bindings = 
+    -- ネストされたellipsisパターンの展開
+    expandNestedEllipsis :: [LispVal] -> [(String, LispVal)] -> [LispVal]
+    expandNestedEllipsis items bindings =
         let vars = [name | Atom name <- items, isListBinding name bindings]
         in if null vars
-           then Nothing
-           else Just $ expandEllipsisPattern items vars bindings
+           then [substituteTemplate (List items) bindings]
+           else expandEllipsisPattern items vars bindings
     
     isListBinding :: String -> [(String, LispVal)] -> Bool
     isListBinding name bindings = 

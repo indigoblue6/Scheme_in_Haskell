@@ -110,7 +110,7 @@ eval env (List (function : args)) = do
     case func of
         Macro macroPatterns macroTemplates -> do
             -- マクロ展開を試みる
-            expanded <- expandMacro (List (function : args)) macroPatterns macroTemplates
+            expanded <- expandMacro args macroPatterns macroTemplates
             eval env expanded
         _ -> do
             argVals <- mapM (eval env) args
@@ -118,8 +118,8 @@ eval env (List (function : args)) = do
 eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 -- | マクロ展開
-expandMacro :: LispVal -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
-expandMacro (List (_macroName : args)) macroPatterns macroTemplates = 
+expandMacro :: [LispVal] -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+expandMacro args macroPatterns macroTemplates = 
     case tryMatch args macroPatterns macroTemplates of
         Just expanded -> return expanded
         Nothing -> throwError $ Default "No matching macro pattern"
@@ -209,7 +209,6 @@ expandMacro (List (_macroName : args)) macroPatterns macroTemplates =
                 , Just (List vals) <- [lookup var bindings]
                 , let len = length vals]
         in [case expandAt i of List [x] -> x; x -> x | i <- [0..maxLen-1]]
-expandMacro _ _ _ = throwError $ Default "Invalid macro form"
 
 -- | 関数の適用
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
@@ -464,12 +463,21 @@ ioPrimitives = [ ("apply", applyProc)
 
 -- | プリミティブ関数を環境にバインド
 primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= flip bindVars 
-    ( [makeFunc' id' func | (id', func) <- primitives] ++
-      [makeIOFunc id' func | (id', func) <- ioPrimitives] )
+primitiveBindings = do
+    env <- nullEnv >>= flip bindVars 
+        ( [makeFunc' id' func | (id', func) <- primitives] ++
+          [makeIOFunc id' func | (id', func) <- ioPrimitives] )
+    -- 標準マクロを追加
+    bindVars env standardMacros
     where 
         makeFunc' id' func = (id', PrimitiveFunc func)
         makeIOFunc id' func = (id', IOFunc func)
+        standardMacros = 
+            [ ("when", Macro [List [Atom "test", Atom "body", Atom "..."]] 
+                             [List [Atom "if", Atom "test", List [Atom "begin", Atom "body", Atom "..."]]])
+            , ("unless", Macro [List [Atom "test", Atom "body", Atom "..."]]
+                               [List [Atom "if", Atom "test", List [], List [Atom "begin", Atom "body", Atom "..."]]])
+            ]
 
 -- | 数値演算 - 数値タワー対応版
 numericBinop :: (Double -> Double -> Double) -> [LispVal] -> ThrowsError LispVal

@@ -832,7 +832,8 @@ eqv badArgList = throwError $ NumArgs 2 badArgList
 equal :: [LispVal] -> ThrowsError LispVal
 equal [arg1, arg2] = do
     primitiveEquals <- or <$> mapM (unpackEquals arg1 arg2)
-                       [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool]
+                       [AnyUnpacker unpackNum, AnyUnpacker unpackStr, AnyUnpacker unpackBool,
+                        AnyUnpacker unpackRational, AnyUnpacker unpackComplex]
     eqvEquals <- eqv [arg1, arg2]
     return $ Bool (primitiveEquals || case eqvEquals of Bool x -> x; _ -> False)
 equal badArgList = throwError $ NumArgs 2 badArgList
@@ -845,6 +846,16 @@ unpackEquals arg1 arg2 (AnyUnpacker unpacker) =
        unpacked2 <- unpacker arg2
        return $ unpacked1 == unpacked2
     `catchError` const (return False)
+
+-- | Unpack rational numbers for equality comparison
+unpackRational :: LispVal -> ThrowsError (Integer, Integer)
+unpackRational (Rational n d) = return (n, d)
+unpackRational notRational = throwError $ TypeMismatch "rational" notRational
+
+-- | Unpack complex numbers for equality comparison
+unpackComplex :: LispVal -> ThrowsError (Double, Double)
+unpackComplex (Complex r i) = return (r, i)
+unpackComplex notComplex = throwError $ TypeMismatch "complex" notComplex
 
 -- | 論理否定
 notFunc :: [LispVal] -> ThrowsError LispVal

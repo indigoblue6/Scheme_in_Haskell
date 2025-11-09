@@ -6,10 +6,16 @@
     ((when test body ...)
      (if test (begin body ...)))))
 
-(define (test-when-macro)
-  (let ((x 0))
-    (when #t (set! x 1))
-    (= x 1)))
+;; Test when macro directly
+(begin
+  (display "Testing Macros:\n")
+  (display "  When macro: "))
+
+(define x 0)
+(when #t (set! x 1))
+(if (= x 1)
+    (display "PASS\n")
+    (display "FAIL\n"))
 
 ;; Test ellipsis pattern
 (define-syntax let-values
@@ -17,13 +23,9 @@
     ((let-values ((var val) ...) body ...)
      (let ((var val) ...) body ...))))
 
-(define (test-ellipsis-macro)
-  (let-values ((x 1) (y 2) (z 3))
-    (= (+ x y z) 6)))
-
-;; Run all tests
-(display "\nTesting Macros:\n")
-(display "  When macro: ")
-(if (test-when-macro) (display "PASS\n") (display "FAIL\n"))
 (display "  Ellipsis pattern: ")
-(if (test-ellipsis-macro) (display "PASS\n") (display "FAIL\n"))
+
+(let-values ((a 1) (b 2) (c 3))
+  (if (= (+ a b c) 6)
+      (display "PASS\n")
+      (display "FAIL\n")))

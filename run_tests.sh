@@ -16,11 +16,17 @@ for test_file in $TESTS_DIR/*.scm; do
     echo ""
     echo "Running $(basename $test_file)..."
     
-    if timeout 5 $INTERPRETER < "$test_file" 2>&1; then
-        PASSED=$((PASSED + 1))
-    else
-        echo "FAILED: $test_file"
+    # Run test and filter output to show only test results
+    output=$(timeout 5 $INTERPRETER < "$test_file" 2>&1 | grep -E "(Testing|PASS|FAIL)" | grep -v "Scheme>>>")
+    
+    if echo "$output" | grep -q "FAIL"; then
+        echo "$output"
+        echo "❌ FAILED: $test_file"
         FAILED=$((FAILED + 1))
+    else
+        echo "$output"
+        echo "✅ PASSED: $test_file"
+        PASSED=$((PASSED + 1))
     fi
 done
 

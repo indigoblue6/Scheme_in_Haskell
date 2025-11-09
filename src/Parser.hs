@@ -49,10 +49,11 @@ parseBool = do
 
 -- | アトムのパーサー
 parseAtom :: Parser LispVal
-parseAtom = parseEllipsis <|> parseRegularAtom
+parseAtom = try parseEllipsis <|> parseRegularAtom
   where
     parseEllipsis = do
         _ <- string "..."
+        notFollowedBy (letter <|> digit <|> symbol)
         return $ Atom "..."
     parseRegularAtom = do
         first <- letter <|> symbol
@@ -118,24 +119,22 @@ parseVector = do
     _ <- char ')'
     return $ List [Atom "vector", List elems]
 
--- | リストのパーサー
-parseList :: Parser LispVal
-parseList = do
+-- | リストまたはドット記法のパーサー
+parseListOrDotted :: Parser LispVal
+parseListOrDotted = do
     spaces0
     elems <- sepEndBy parseExpr spaces
     spaces0
-    return $ List elems
-
--- | ドット記法のパーサー
-parseDottedList :: Parser LispVal
-parseDottedList = do
-    spaces0
-    hd <- endBy parseExpr spaces
-    _ <- char '.'
-    spaces
-    tl <- parseExpr
-    spaces0
-    return $ DottedList hd tl
+    maybeDot <- optionMaybe (char '.')
+    case maybeDot of
+        Nothing -> return $ List elems
+        Just _ -> do
+            spaces
+            tl <- parseExpr
+            spaces0
+            case elems of
+                [] -> fail "Dotted list must have at least one element before the dot"
+                _ -> return $ DottedList elems tl
 
 -- | クォートのパーサー
 parseQuoted :: Parser LispVal
@@ -155,7 +154,7 @@ parseExpr = parseBool
         <|> parseVector
         <|> do
             _ <- char '('
-            x <- try parseList <|> parseDottedList
+            x <- parseListOrDotted
             _ <- char ')'
             return x
 

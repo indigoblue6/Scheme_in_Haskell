@@ -6,6 +6,8 @@ import Eval
 import System.Environment
 import System.Console.Haskeline
 import Control.Monad.IO.Class (liftIO)
+import Data.IORef (readIORef)
+import qualified Data.Map as Map
 
 -- | 1つの式を評価して文字列を返す
 evalString :: Env -> String -> IO String
@@ -93,18 +95,22 @@ schemeKeywords =
     , "#t", "#f"
     ]
 
--- | タブ補完の設定
-schemeCompletion :: CompletionFunc IO
-schemeCompletion = completeWord Nothing " \t()'" $ \str -> do
-    let matches = filter (str `isPrefixOf`) schemeKeywords
+-- | 環境から動的にタブ補完候補を取得
+schemeCompletionWithEnv :: Env -> CompletionFunc IO
+schemeCompletionWithEnv envRef = completeWord Nothing " \t()" $ \str -> do
+    -- 補完が呼ばれるたびに最新の環境を取得
+    env <- readIORef envRef
+    let userDefined = Map.keys env
+    let allKeywords = schemeKeywords ++ userDefined
+    let matches = filter (str `isPrefixOf`) allKeywords
     return $ map simpleCompletion matches
   where
     isPrefixOf prefix word = prefix == take (length prefix) word
 
--- | Haskellineの設定
-replSettings :: Settings IO
-replSettings = Settings
-    { complete = schemeCompletion
+-- | Haskellineの設定（環境付き）
+replSettingsWithEnv :: Env -> Settings IO
+replSettingsWithEnv env = Settings
+    { complete = schemeCompletionWithEnv env
     , historyFile = Just ".scheme_history"
     , autoAddHistory = True
     }
@@ -135,25 +141,22 @@ readMultiLine prompt = do
     minput <- getInputLine prompt
     case minput of
         Nothing -> return Nothing
-        Just line -> collectLines [line]
+        Just line -> collectLines line
   where
-    collectLines :: [String] -> InputT IO (Maybe String)
-    collectLines lines' = 
-        let combined = unlines (reverse lines')
-        in if isBalanced combined
-           then return $ Just combined
-           else do
-               mnext <- getInputLine "      ... "
-               case mnext of
-                   Nothing -> return $ Just combined  -- Ctrl-Dで現在の入力を返す
-                   Just "" -> collectLines ("" : lines')  -- 空行も含める
-                   Just next -> collectLines (next : lines')
+    collectLines :: String -> InputT IO (Maybe String)
+    collectLines acc
+        | isBalanced acc = return $ Just acc
+        | otherwise = do
+            mnext <- getInputLine "      ... "
+            case mnext of
+                Nothing -> return $ Just acc  -- Ctrl-Dで現在の入力を返す
+                Just nextLine -> collectLines (acc ++ "\n" ++ nextLine)
 
 -- | REPL(Read-Eval-Print Loop) - Haskeline版
 runRepl :: IO ()
 runRepl = do
     env <- primitiveBindings
-    runInputT replSettings $ loop env
+    runInputT (replSettingsWithEnv env) $ loop env
   where
     loop :: Env -> InputT IO ()
     loop env = do

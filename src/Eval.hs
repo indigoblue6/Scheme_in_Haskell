@@ -9,9 +9,11 @@ module Eval
 
 import LispVal
 import Parser (readExpr)
+import Control.Monad (unless)
 import Control.Monad.Except
 import Control.Monad.IO.Class (liftIO)
 import Data.IORef (newIORef, readIORef, writeIORef)
+import qualified Data.Map as Map
 import System.IO (hFlush, stdout, openFile, hClose, hGetChar, hPutChar, hPutStr, IOMode(..), hIsEOF)
 
 -- | Scheme式の評価
@@ -62,10 +64,16 @@ eval env (List (Atom "define-syntax" : Atom name : List (Atom "syntax-rules" : L
     extractPattern other = other
     extractTemplate (List (_ : template : _)) = template
     extractTemplate other = other
-eval env (List (Atom "define" : List (Atom var : params') : body')) =
-    makeNormalFunc env params' body' >>= defineVar env var
-eval env (List (Atom "define" : DottedList (Atom var : params') varargs : body')) =
-    makeVarArgs varargs env params' body' >>= defineVar env var
+eval env (List (Atom "define" : List (Atom var : params') : body')) = do
+    func <- makeNormalFunc env params' body'
+    -- 関数本体の未定義変数をチェック
+    checkUndefinedVars env (map showVal params') body'
+    defineVar env var func
+eval env (List (Atom "define" : DottedList (Atom var : params') varargs : body')) = do
+    func <- makeVarArgs varargs env params' body'
+    -- 関数本体の未定義変数をチェック
+    checkUndefinedVars env (map showVal params' ++ [showVal varargs]) body'
+    defineVar env var func
 eval env (List (Atom "lambda" : List params' : body')) =
     makeNormalFunc env params' body'
 eval env (List (Atom "lambda" : DottedList params' varargs : body')) =
@@ -271,6 +279,33 @@ makeNormalFunc = makeFunc Nothing
 
 makeVarArgs :: LispVal -> Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
 makeVarArgs = makeFunc . Just . showVal
+
+-- | 関数本体の未定義変数をチェック（警告を出力）
+checkUndefinedVars :: Env -> [String] -> [LispVal] -> IOThrowsError ()
+checkUndefinedVars env params' body' = do
+    let usedVars = concatMap collectVars body'
+    let localVars = params' ++ builtinVars
+    let undefined' = filter (`notElem` localVars) usedVars
+    unless (null undefined') $ do
+        envVars <- liftIO $ getAllVars env
+        let trulyUndefined = filter (`notElem` envVars) undefined'
+        unless (null trulyUndefined) $
+            liftIO $ putStrLn $ "Warning: Possibly undefined variables: " ++ unwords trulyUndefined
+  where
+    builtinVars = ["define", "lambda", "if", "quote", "set!", "let", "let*", "letrec",
+                   "cond", "case", "and", "or", "begin", "delay", "force",
+                   "call/cc", "call-with-current-continuation", "define-syntax"]
+    
+    collectVars :: LispVal -> [String]
+    collectVars (Atom name) = [name]
+    collectVars (List exprs) = concatMap collectVars exprs
+    collectVars (DottedList exprs last') = concatMap collectVars exprs ++ collectVars last'
+    collectVars _ = []
+    
+    getAllVars :: Env -> IO [String]
+    getAllVars envRef = do
+        envMap <- readIORef envRef
+        return $ Map.keys envMap
 
 -- | let特殊形式の評価
 evalLet :: Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal

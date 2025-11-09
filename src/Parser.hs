@@ -7,9 +7,18 @@ import LispVal
 import Control.Monad.Except
 import Text.ParserCombinators.Parsec hiding (spaces)
 
--- | スペースとコメントのパーサー
+-- | スペースとコメントのパーサー（1つ以上）
 spaces :: Parser ()
 spaces = skipMany1 (space <|> comment)
+  where
+    comment = do
+        _ <- char ';'
+        _ <- manyTill anyChar (try newline <|> (eof >> return '\n'))
+        return ' '
+
+-- | スペースとコメントのパーサー（0個以上）
+spaces0 :: Parser ()
+spaces0 = skipMany (space <|> comment)
   where
     comment = do
         _ <- char ';'
@@ -103,19 +112,29 @@ parseChar = do
 parseVector :: Parser LispVal
 parseVector = do
     _ <- string "#("
-    elems <- sepBy parseExpr spaces
+    spaces0
+    elems <- sepEndBy parseExpr spaces
+    spaces0
     _ <- char ')'
     return $ List [Atom "vector", List elems]
 
 -- | リストのパーサー
 parseList :: Parser LispVal
-parseList = fmap List $ sepBy parseExpr spaces
+parseList = do
+    spaces0
+    elems <- sepEndBy parseExpr spaces
+    spaces0
+    return $ List elems
 
 -- | ドット記法のパーサー
 parseDottedList :: Parser LispVal
 parseDottedList = do
+    spaces0
     hd <- endBy parseExpr spaces
-    tl <- char '.' >> spaces >> parseExpr
+    _ <- char '.'
+    spaces
+    tl <- parseExpr
+    spaces0
     return $ DottedList hd tl
 
 -- | クォートのパーサー

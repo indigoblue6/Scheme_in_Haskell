@@ -1,0 +1,24 @@
+cabal-version:      2.4
+name:               scheme-interpreter
+version:            0.1.0.0
+synopsis:           A Scheme interpreter written in Haskell
+description:        A simple Scheme interpreter implementation in Haskell
+license:            MIT
+license-file:       LICENSE
+author:             daiki
+maintainer:         daiki
+category:           Language
+build-type:         Simple
+
+executable scheme-interpreter
+    main-is:          Main.hs
+    other-modules:    LispVal
+                    , Parser
+                    , Eval
+    build-depends:    base >=4.14 && <5
+                    , parsec >=3.1 && <4
+                    , mtl >=2.2 && <3
+                    , containers >=0.6 && <1
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    ghc-options:      -Wall

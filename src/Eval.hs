@@ -80,19 +80,19 @@ eval env (List (Atom "lambda" : DottedList params' varargs : body')) =
     makeVarArgs varargs env params' body'
 eval env (List (Atom "lambda" : varargs@(Atom _) : body')) =
     makeVarArgs varargs env [] body'
-eval _ (List [Atom "delay", expr]) = do
+eval env (List [Atom "delay", expr]) = do
     forcedRef <- liftIO $ newIORef False
     valueRef <- liftIO $ newIORef (Bool False)
-    return $ Promise forcedRef valueRef expr
+    return $ Promise forcedRef valueRef expr env
 eval env (List [Atom "force", promise]) = do
     p <- eval env promise
     case p of
-        Promise forcedRef valueRef thunkExpr -> do
+        Promise forcedRef valueRef thunkExpr capturedEnv -> do
             isForced <- liftIO $ readIORef forcedRef
             if isForced
                 then liftIO $ readIORef valueRef
                 else do
-                    result <- eval env thunkExpr
+                    result <- eval capturedEnv thunkExpr
                     liftIO $ writeIORef forcedRef True
                     liftIO $ writeIORef valueRef result
                     return result
@@ -458,6 +458,8 @@ primitives = [ ("+", smartAdd)
              , ("mod", integerDiv mod)
              , ("quotient", integerDiv quot)
              , ("remainder", integerDiv rem)
+             , ("gcd", gcdFunc)
+             , ("lcm", lcmFunc)
              , ("=", numBoolBinop (==))
              , ("<", numBoolBinop (<))
              , (">", numBoolBinop (>))
@@ -1165,6 +1167,26 @@ negativeFunc :: [LispVal] -> ThrowsError LispVal
 negativeFunc [Number n] = return $ Bool $ n < 0
 negativeFunc [badArg] = throwError $ TypeMismatch "number" badArg
 negativeFunc badArgList = throwError $ NumArgs 1 badArgList
+
+gcdFunc :: [LispVal] -> ThrowsError LispVal
+gcdFunc [] = return $ Number 0
+gcdFunc [Number n] = return $ Number $ abs n
+gcdFunc [Number a, Number b] = return $ Number $ gcd a b
+gcdFunc (Number a : Number b : rest) = gcdFunc (Number (gcd a b) : rest)
+gcdFunc [badArg] = throwError $ TypeMismatch "number" badArg
+gcdFunc badArgList = throwError $ TypeMismatch "number" (head $ filter (not . isNumberVal) badArgList)
+  where isNumberVal (Number _) = True
+        isNumberVal _ = False
+
+lcmFunc :: [LispVal] -> ThrowsError LispVal
+lcmFunc [] = return $ Number 1
+lcmFunc [Number n] = return $ Number $ abs n
+lcmFunc [Number a, Number b] = return $ Number $ lcm a b
+lcmFunc (Number a : Number b : rest) = lcmFunc (Number (lcm a b) : rest)
+lcmFunc [badArg] = throwError $ TypeMismatch "number" badArg
+lcmFunc badArgList = throwError $ TypeMismatch "number" (head $ filter (not . isNumberVal) badArgList)
+  where isNumberVal (Number _) = True
+        isNumberVal _ = False
 
 -- | リスト検索と連想リスト
 member :: [LispVal] -> ThrowsError LispVal

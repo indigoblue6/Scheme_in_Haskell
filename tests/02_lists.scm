@@ -13,8 +13,8 @@
 (define (test-car-cdr-combos)
   (let ((nested '((1 2) (3 4) (5 6))))
     (and (= (caar nested) 1)
-         (= (cadr nested) '(3 4))
-         (= (caddr nested) '(5 6))
+         (equal? (cadr nested) '(3 4))
+         (equal? (caddr nested) '(5 6))
          (= (caadr nested) 3))))
 
 ;; List predicates

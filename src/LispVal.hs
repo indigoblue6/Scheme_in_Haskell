@@ -48,7 +48,7 @@ data LispVal = Atom String
                     , closure :: Env
                     }
              | Continuation { cont :: LispVal -> IOThrowsError LispVal }
-             | Promise { forced :: IORef Bool, value :: IORef LispVal, thunk :: LispVal }
+             | Promise { forced :: IORef Bool, value :: IORef LispVal, thunk :: LispVal, promiseEnv :: Env }
              | Port { handle :: IO.Handle, portType :: PortType }
              | Macro { patterns :: [LispVal], templates :: [LispVal] }  -- マクロ
              | Unspecified  -- 未定義値（ifの2引数形式などで使用）
@@ -91,7 +91,7 @@ showVal (DottedList hd tl) = "(" ++ unwordsList hd ++ " . " ++ showVal tl ++ ")"
 showVal (PrimitiveFunc _) = "<primitive>"
 showVal (IOFunc _) = "<io-primitive>"
 showVal (Continuation _) = "<continuation>"
-showVal (Promise _ _ _) = "<promise>"
+showVal (Promise _ _ _ _) = "<promise>"
 showVal (Port _ InputPort) = "<input-port>"
 showVal (Port _ OutputPort) = "<output-port>"
 showVal (Macro _ _) = "<macro>"
@@ -144,7 +144,7 @@ typeOf (PrimitiveFunc _) = "primitive-function"
 typeOf (Func _ _ _ _) = "function"
 typeOf (IOFunc _) = "io-function"
 typeOf (Port _ _) = "port"
-typeOf (Promise _ _ _) = "promise"
+typeOf (Promise _ _ _ _) = "promise"
 typeOf (Continuation _) = "continuation"
 typeOf (Macro _ _) = "macro"
 typeOf (MutablePair _ _) = "mutable-pair"

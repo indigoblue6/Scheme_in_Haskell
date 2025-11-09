@@ -4,7 +4,6 @@ import LispVal
 import Parser
 import Eval
 import System.Environment
-import Control.Monad
 import System.Console.Haskeline
 import Control.Monad.IO.Class (liftIO)
 
@@ -16,15 +15,74 @@ evalString env expr = runIOThrows $ fmap show $ liftThrows (readExpr expr) >>= e
 evalAndPrint :: Env -> String -> IO ()
 evalAndPrint env expr = evalString env expr >>= putStrLn
 
--- | Scheme関数名と特殊形式のリスト（タブ補完用）
+-- | Scheme関数名と特殊形式のリスト(タブ補完用)
 schemeKeywords :: [String]
 schemeKeywords = 
-    [ "define", "lambda", "if", "quote", "set!", "car", "cdr", "cons"
+    -- 特殊形式
+    [ "define", "lambda", "if", "quote", "set!", "let", "let*", "letrec"
+    , "cond", "case", "and", "or", "begin"
+    , "delay", "force"
+    , "call/cc", "call-with-current-continuation"
+    , "define-syntax", "syntax-rules"
+    
+    -- リスト操作
+    , "car", "cdr", "cons", "list", "length", "reverse", "append"
+    , "caar", "cadr", "cdar", "cddr"
+    , "caaar", "caadr", "cadar", "caddr", "cdaar", "cdadr", "cddar", "cdddr"
+    , "null?", "pair?", "list?"
+    , "member", "memq", "assoc", "assq"
+    
+    -- 可変ペア操作
+    , "mcons", "mcar", "mcdr", "set-car!", "set-cdr!"
+    
+    -- 算術演算
     , "+", "-", "*", "/", "mod", "quotient", "remainder"
+    , "abs", "max", "min"
+    , "even?", "odd?", "zero?", "positive?", "negative?"
+    
+    -- 比較演算
     , "=", "<", ">", "<=", ">=", "/="
     , "eq?", "eqv?", "equal?"
+    
+    -- 文字列操作
     , "string=?", "string<?", "string>?", "string<=?", "string>=?"
-    , "&&", "||"
+    , "string-length", "string-append", "string-ref", "substring"
+    , "string->list", "list->string", "string->symbol", "symbol->string"
+    , "string?"
+    , "make-mutable-string", "string-set!", "mutable-string-ref", "mutable-string->string"
+    
+    -- 文字操作
+    , "char->integer", "integer->char", "char?"
+    
+    -- ベクター操作
+    , "vector", "make-vector", "vector-ref", "vector-set!", "vector-length"
+    , "vector?"
+    
+    -- 型判定
+    , "number?", "symbol?", "procedure?", "boolean?"
+    
+    -- 高階関数
+    , "apply", "map", "filter", "for-each"
+    
+    -- I/O
+    , "display", "newline", "read", "load"
+    , "open-input-file", "open-output-file"
+    , "close-input-port", "close-output-port"
+    , "read-char", "write-char", "write", "eof-object?"
+    
+    -- 数学関数
+    , "sqrt", "expt", "sin", "cos", "tan", "log", "exp"
+    
+    -- リスト関数拡張
+    , "list-ref", "list-tail"
+    
+    -- 型変換
+    , "number->string", "string->number"
+    
+    -- メタプログラミング
+    , "eval", "error"
+    
+    -- 定数
     , "#t", "#f"
     ]
 
